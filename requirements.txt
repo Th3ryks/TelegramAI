@@ -1,0 +1,4 @@
+asyncio
+dotenv
+kurigram
+openai
