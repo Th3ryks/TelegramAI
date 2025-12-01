@@ -2,3 +2,4 @@ asyncio
 dotenv
 kurigram
 openai
+loguru
