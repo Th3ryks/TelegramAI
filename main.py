@@ -2,6 +2,7 @@ import os
 import sys
 import asyncio
 import sqlite3
+import aiohttp
 from dotenv import load_dotenv
 from loguru import logger
 from pyrogram import Client, filters
@@ -9,7 +10,7 @@ from pyrogram.errors import FloodWait, MessageNotModified
 from pyrogram import idle
 from pyrogram.handlers import MessageHandler
 from openai import AsyncOpenAI
-from pyrogram.types import MessageEntity
+from pyrogram.types import MessageEntity, InputMediaPhoto
 from pyrogram.enums import MessageEntityType
 
 logger.remove()
@@ -45,10 +46,6 @@ ai_client = AsyncOpenAI(
 )
 logger.info(f"llm-client-ready base_url={LLM_BASE_URL} model={LLM_MODEL} max_tokens={LLM_MAX_TOKENS}")
 
-EMOJI_ROBOT_ID = os.getenv("EMOJI_ROBOT_ID")
-EMOJI_QUESTION_ID = os.getenv("EMOJI_QUESTION_ID")
-EMOJI_LIGHTBULB_ID = os.getenv("EMOJI_LIGHTBULB_ID")
-
 def _utf16_len(s: str) -> int:
     return len(s.encode("utf-16-le")) // 2
 
@@ -60,14 +57,16 @@ def _utf16_index(s: str, idx: int) -> int:
 def build_custom_emoji_entities(text: str) -> list[MessageEntity]:
     entities: list[MessageEntity] = []
     try:
-        entities.append(
-            MessageEntity(
-                type=MessageEntityType.CUSTOM_EMOJI,
-                offset=0,
-                length=1,
-                custom_emoji_id=int("6221887708877295820"),
+        q_offset = text.find("❓")
+        if q_offset != -1:
+            entities.append(
+                MessageEntity(
+                    type=MessageEntityType.CUSTOM_EMOJI,
+                    offset=_utf16_index(text, q_offset),
+                    length=_utf16_len("❓"),
+                    custom_emoji_id=int("6221887708877295820"),
+                )
             )
-        )
         ans_offset = text.find("💡")
         if ans_offset != -1:
             entities.append(
@@ -171,6 +170,157 @@ async def safe_edit(message, text, entities=None):
             return
 
 
+async def generate_and_attach_image(message, prompt: str):
+    try:
+        from huggingface_hub import InferenceClient
+    except Exception as e:
+        logger.info(f"huggingface-hub-not-available: {e}")
+        return
+
+    api_key = os.getenv("HUGGINGFACE_API_KEY")
+    if not api_key:
+        logger.info("hf-api-key-missing")
+        return
+
+    client = InferenceClient(model="black-forest-labs/FLUX.1-dev", token=api_key)
+
+    async def _gen_once() -> str | None:
+        def _run() -> str | None:
+            try:
+                image = client.text_to_image(prompt=prompt)
+                out_path = "aigen_output.png"
+                image.save(out_path)
+                return out_path
+            except Exception:
+                return None
+
+        return await asyncio.to_thread(_run)
+
+    file_path: str | None = None
+    for attempt, delay in ((1, 2), (2, 5), (3, 8)):
+        file_path = await _gen_once()
+        if file_path:
+            break
+        await asyncio.sleep(delay)
+    if not file_path:
+        fail_text = "❓ Запрос: " + prompt + "\n\n" + "💡 Ответ:\n" + "Сервис генерации недоступен."
+        await safe_edit(message, fail_text)
+        return
+
+    caption = "❓ Запрос: " + prompt
+    caption_text, caption_entities = await _parse_markdown_with_custom_emoji(message._client, caption)
+
+    try:
+        await message.edit_media(
+            InputMediaPhoto(media=file_path, caption=caption_text, caption_entities=caption_entities)
+        )
+    except Exception as e:
+        logger.info(f"edit-media-failed: {e}")
+        try:
+            await message.delete()
+            await message.chat.send_photo(file_path, caption=caption_text, caption_entities=caption_entities)
+        except Exception as e2:
+            logger.info(f"send-photo-failed: {e2}")
+    finally:
+        try:
+            os.remove(file_path)
+        except Exception:
+            pass
+
+
+async def get_binance_price(symbol: str) -> str | None:
+    url = "https://api.binance.com/api/v3/ticker/price"
+    params = {"symbol": symbol}
+    timeout = aiohttp.ClientTimeout(total=10)
+    async with aiohttp.ClientSession(timeout=timeout) as session:
+        try:
+            async with session.get(url, params=params) as resp:
+                if resp.status != 200:
+                    return None
+                data = await resp.json()
+                price = data.get("price")
+                return price
+        except Exception:
+            return None
+
+
+def detect_symbol(query: str) -> str | None:
+    q = query.lower()
+    mapping = {
+        "btc": [
+            "btc",
+            "bitcoin",
+            "биткоин",
+            "биткойн",
+            "биток",
+            "битка",
+            "бтс",
+        ],
+        "eth": [
+            "eth",
+            "ethereum",
+            "эфир",
+            "эфириум",
+            "эфира",
+        ],
+        "ton": [
+            "ton",
+            "toncoin",
+            "тон",
+            "тонкоин",
+            "тона",
+        ],
+        "sol": [
+            "sol",
+            "solana",
+            "солана",
+            "сол",
+            "соланы",
+        ],
+        "bnb": [
+            "bnb",
+            "бинанс коин",
+            "бинби",
+        ],
+        "xrp": [
+            "xrp",
+            "рипл",
+            "ripple",
+            "хрп",
+        ],
+        "doge": [
+            "doge",
+            "дог",
+            "додж",
+            "доге",
+        ],
+        "trx": [
+            "trx",
+            "tron",
+            "трон",
+            "трона",
+        ],
+    }
+    for key, synonyms in mapping.items():
+        for s in synonyms:
+            if s in q:
+                base = key.upper()
+                return f"{base}USDT"
+    return None
+
+
+async def maybe_answer_crypto(message, query: str) -> bool:
+    symbol = detect_symbol(query)
+    if not symbol:
+        return False
+    price = await get_binance_price(symbol)
+    if price is None:
+        return False
+    name = symbol.replace("USDT", "")
+    body = f"Текущая цена {name}: {price} USDT"
+    text = "❓ Запрос: " + query + "\n\n" + "💡 Ответ:\n" + body
+    await safe_edit(message, text)
+    return True
 async def stream_and_edit(message, prompt):
     system_instruction = (
         "Respond only in Russian. "
@@ -269,17 +419,44 @@ async def stream_and_edit(message, prompt):
 
 async def handle_message(_, message):
     text = message.text or ""
-    if not text.startswith(".ai"):
+    if text.startswith(".aigen"):
+        query = text[6:].strip()
+        if not query:
+            return
+        img_progress_text = "💻 Картинка Генерируется..."
+        img_progress_entities = [
+            MessageEntity(
+                type=MessageEntityType.CUSTOM_EMOJI,
+                offset=0,
+                length=2,
+                custom_emoji_id=int("6127281351851774285"),
+            )
+        ]
+        await safe_edit(message, img_progress_text, img_progress_entities)
+        await generate_and_attach_image(message, query)
         return
-    query = text[3:].strip()
-    if not query:
-        return
-    await safe_edit(message, "🤖 Генерирую Ответ...")
-    logger.info(
-        f"request-started chat_id={message.chat.id} message_id={message.id} query_len={len(query)}"
-    )
-    await stream_and_edit(message, query)
-    logger.info("request-finished")
+    if text.startswith(".ai"):
+        query = text[3:].strip()
+        if not query:
+            return
+        progress_text = "⏳ Генерирую Ответ..."
+        progress_entities = [
+            MessageEntity(
+                type=MessageEntityType.CUSTOM_EMOJI,
+                offset=0,
+                length=1,
+                custom_emoji_id=int("6129624655943700681"),
+            )
+        ]
+        await safe_edit(message, progress_text, progress_entities)
+        logger.info(
+            f"request-started chat_id={message.chat.id} message_id={message.id} query_len={len(query)}"
+        )
+        if await maybe_answer_crypto(message, query):
+            logger.info("crypto-answer-sent")
+            return
+        await stream_and_edit(message, query)
+        logger.info("request-finished")
 
 
 async def main():
