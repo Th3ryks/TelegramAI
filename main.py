@@ -10,7 +10,7 @@ from pyrogram.errors import FloodWait, MessageNotModified
 from pyrogram import idle
 from pyrogram.handlers import MessageHandler
 from openai import AsyncOpenAI
-from pyrogram.types import MessageEntity, InputMediaPhoto
+from pyrogram.types import MessageEntity
 from pyrogram.enums import MessageEntityType
 
 logger.remove()
@@ -170,62 +170,6 @@ async def safe_edit(message, text, entities=None):
             return
 
 
-async def generate_and_attach_image(message, prompt: str):
-    try:
-        from huggingface_hub import InferenceClient
-    except Exception as e:
-        logger.info(f"huggingface-hub-not-available: {e}")
-        return
-
-    api_key = os.getenv("HUGGINGFACE_API_KEY")
-    if not api_key:
-        logger.info("hf-api-key-missing")
-        return
-
-    client = InferenceClient(model="black-forest-labs/FLUX.1-dev", token=api_key)
-
-    async def _gen_once() -> str | None:
-        def _run() -> str | None:
-            try:
-                image = client.text_to_image(prompt=prompt)
-                out_path = "aigen_output.png"
-                image.save(out_path)
-                return out_path
-            except Exception:
-                return None
-
-        return await asyncio.to_thread(_run)
-
-    file_path: str | None = None
-    for attempt, delay in ((1, 2), (2, 5), (3, 8)):
-        file_path = await _gen_once()
-        if file_path:
-            break
-        await asyncio.sleep(delay)
-    if not file_path:
-        fail_text = "❓ Запрос: " + prompt + "\n\n" + "💡 Ответ:\n" + "Сервис генерации недоступен."
-        await safe_edit(message, fail_text)
-        return
-
-    caption = "❓ Запрос: " + prompt
-    caption_text, caption_entities = await _parse_markdown_with_custom_emoji(message._client, caption)
-
-    try:
-        await message.edit_media(
-            InputMediaPhoto(media=file_path, caption=caption_text, caption_entities=caption_entities)
-        )
-    except Exception as e:
-        logger.info(f"edit-media-failed: {e}")
-        try:
-            await message.delete()
-            await message.chat.send_photo(file_path, caption=caption_text, caption_entities=caption_entities)
-        except Exception as e2:
-            logger.info(f"send-photo-failed: {e2}")
-    finally:
-        try:
-            os.remove(file_path)
-        except Exception:
-            pass
 
 
 async def get_binance_price(symbol: str) -> str | None:
@@ -419,22 +363,6 @@ async def stream_and_edit(message, prompt):
 
 async def handle_message(_, message):
     text = message.text or ""
-    if text.startswith(".aigen"):
-        query = text[6:].strip()
-        if not query:
-            return
-        img_progress_text = "💻 Картинка Генерируется..."
-        img_progress_entities = [
-            MessageEntity(
-                type=MessageEntityType.CUSTOM_EMOJI,
-                offset=0,
-                length=2,
-                custom_emoji_id=int("6127281351851774285"),
-            )
-        ]
-        await safe_edit(message, img_progress_text, img_progress_entities)
-        await generate_and_attach_image(message, query)
-        return
     if text.startswith(".ai"):
         query = text[3:].strip()
         if not query:
