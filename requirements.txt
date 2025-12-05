@@ -1,5 +1,6 @@
 asyncio
-dotenv
+python-dotenv
 kurigram
 openai
 loguru
+aiohttp

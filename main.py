@@ -12,6 +12,7 @@ from pyrogram.handlers import MessageHandler
 from openai import AsyncOpenAI
 from pyrogram.types import MessageEntity
 from pyrogram.enums import MessageEntityType
+from crypto import attach_crypto_handlers
 
 logger.remove()
 logger.add(
@@ -395,7 +396,8 @@ async def main():
         phone_number=PHONE_NUMBER,
     )
 
-    app.add_handler(MessageHandler(handle_message, filters.me & filters.text))
+    app.add_handler(MessageHandler(handle_message, filters.me & filters.regex(r"^\.ai") & filters.text))
+    attach_crypto_handlers(app)
 
     async def start_with_retry(retries: int = 6, delay_sec: int = 5) -> bool:
         for attempt in range(1, retries + 1):

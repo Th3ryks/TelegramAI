@@ -42,12 +42,20 @@ A fully asynchronous Pyrogram-based Telegram assistant that streams responses fr
    ```
 
 ## Usage
-- Start the app:
+- Default start:
   ```bash
   python3 main.py
   ```
 - First run prompts sign-in and creates a local session.
-- Send a message starting with `.ai <your question>` in any chat. The message will be edited to show generation progress and streamed content.
+- LLM:
+  - Send a message starting with `.ai <your question>` in any chat to stream answers.
+- Crypto commands:
+  - `.usdt [amount]` — header shows `🧮 Conversion <amount> 💵:`; list shows `• 💎`, `• 🪙`, `• ⭐`
+  - `.ton  [amount]` — header shows `🧮 Conversion <amount> 💎:`; list shows `• 💵`, `• 🪙`, `• ⭐`
+  - `.sol  [amount]` — header shows `🧮 Conversion <amount> 🪙:`; list shows `• 💵`, `• 💎`, `• ⭐`
+  - Amount is optional; default is `1.00`. Input supports up to two decimals.
+  - Stars use fixed price: `1 ⭐ = $0.015`.
+  - TON/USD and SOL/USD are fetched live from Binance Public API.
 
 ## Provider Guide 🧭
 This project supports any OpenAI-compatible provider by changing `.env`:
