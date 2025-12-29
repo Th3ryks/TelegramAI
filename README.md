@@ -5,14 +5,14 @@ A fully asynchronous Pyrogram-based Telegram assistant that streams responses fr
 ## Features
 - Streams LLM responses with incremental edits every 3 seconds
 - Message length capped to `4096` characters
-- Configurable provider, model, and token limits via `.env`
+- Uses Mistral chat API with streaming
 - Loguru-based logging to console and file (`bot.log`)
 - Works for messages sent by you in any chat (prefix `.ai`)
 
 ## Requirements
 - Python `3.11`
 - Telegram API credentials: `API_ID`, `API_HASH`, `PHONE_NUMBER`, `SESSION_NAME`
-- LLM provider API key
+- Mistral API key: `MISTRAL_API_KEY`
 
 ## Installation
 1. Clone the repository:
@@ -35,10 +35,7 @@ A fully asynchronous Pyrogram-based Telegram assistant that streams responses fr
    API_HASH=your_api_hash
    PHONE_NUMBER=your_phone_number
    SESSION_NAME=account
-   OPENROUTER_API_KEY=your_openrouter_api_key
-   LLM_BASE_URL=https://openrouter.ai/api/v1
-   LLM_MODEL=qwen/qwen3-coder-plus
-   LLM_MAX_TOKENS=2048
+   MISTRAL_API_KEY=your_mistral_api_key
    ```
 
 ## Usage
@@ -58,19 +55,12 @@ A fully asynchronous Pyrogram-based Telegram assistant that streams responses fr
   - TON/USD and SOL/USD are fetched live from Binance Public API.
 
 ## Provider Guide 🧭
-This project supports any OpenAI-compatible provider by changing `.env`:
-- `LLM_BASE_URL` — API base URL
-- `LLM_MODEL` — model identifier
-- `LLM_MAX_TOKENS` — upper bound for generated tokens
+This project is configured for Mistral's OpenAI-compatible chat API:
+- Base URL: `https://api.mistral.ai/v1`
+- Default model: `mistral-small-latest` (general-purpose, free tier friendly)
+- Max tokens per response: `2048`
 
-Recommended options:
-- OpenRouter — `LLM_BASE_URL=https://openrouter.ai/api/v1` with large model selection. Check credits/quotas.
-- Groq — `LLM_BASE_URL=https://api.groq.com/openai/v1` with models like `llama-3.1-70b-versatile` (large context, fast). Obtain `GROQ_API_KEY` and set it in `OPENROUTER_API_KEY` or adapt code to a separate env variable.
-- DeepSeek — `LLM_BASE_URL=https://api.deepseek.com/v1` and model `deepseek-chat` (large context). Verify daily limits.
-
-Notes:
-- Quotas change over time. Always confirm free tier and request limits to ensure ≥100 requests/day for your usage.
-- For truly high daily volumes, consider running a local model via Ollama and add web augmentation (RAG) for freshness.
+You can change the model in `main.py` by editing `MISTRAL_MODEL`.
 
 ## Logging
 - Console logs with colors

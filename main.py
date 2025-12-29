@@ -36,16 +36,18 @@ API_ID = int(os.getenv("API_ID"))
 API_HASH = os.getenv("API_HASH")
 PHONE_NUMBER = os.getenv("PHONE_NUMBER")
 SESSION_NAME = os.getenv("SESSION_NAME", "account")
-OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
-LLM_BASE_URL = os.getenv("LLM_BASE_URL", "https://openrouter.ai/api/v1")
-LLM_MODEL = os.getenv("LLM_MODEL", "qwen/qwen3-coder-plus")
-LLM_MAX_TOKENS = int(os.getenv("LLM_MAX_TOKENS", "2048"))
+MISTRAL_API_KEY = os.getenv("MISTRAL_API_KEY")
+MISTRAL_BASE_URL = "https://api.mistral.ai/v1"
+MISTRAL_MODEL = "mistral-small-latest"
+MISTRAL_MAX_TOKENS = 2048
 
 ai_client = AsyncOpenAI(
-    base_url=LLM_BASE_URL,
-    api_key=OPENROUTER_API_KEY,
+    base_url=MISTRAL_BASE_URL,
+    api_key=MISTRAL_API_KEY,
 )
-logger.info(f"llm-client-ready base_url={LLM_BASE_URL} model={LLM_MODEL} max_tokens={LLM_MAX_TOKENS}")
+logger.info(
+    f"llm-client-ready base_url={MISTRAL_BASE_URL} model={MISTRAL_MODEL} max_tokens={MISTRAL_MAX_TOKENS}"
+)
 
 def _utf16_len(s: str) -> int:
     return len(s.encode("utf-16-le")) // 2
@@ -325,13 +327,13 @@ async def stream_and_edit(message, prompt):
 
     try:
         stream = await ai_client.chat.completions.create(
-            model=LLM_MODEL,
+            model=MISTRAL_MODEL,
             messages=[
                 {"role": "system", "content": system_instruction},
                 {"role": "user", "content": prompt},
             ],
             stream=True,
-            max_tokens=LLM_MAX_TOKENS,
+            max_tokens=MISTRAL_MAX_TOKENS,
         )
         logger.info("llm-stream-started")
 
