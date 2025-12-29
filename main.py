@@ -2,7 +2,6 @@ import os
 import sys
 import asyncio
 import sqlite3
-import aiohttp
 from dotenv import load_dotenv
 from loguru import logger
 from pyrogram import Client, filters
@@ -175,99 +174,6 @@ async def safe_edit(message, text, entities=None):
 
 
 
-async def get_binance_price(symbol: str) -> str | None:
-    url = "https://api.binance.com/api/v3/ticker/price"
-    params = {"symbol": symbol}
-    timeout = aiohttp.ClientTimeout(total=10)
-    async with aiohttp.ClientSession(timeout=timeout) as session:
-        try:
-            async with session.get(url, params=params) as resp:
-                if resp.status != 200:
-                    return None
-                data = await resp.json()
-                price = data.get("price")
-                return price
-        except Exception:
-            return None
-
-
-def detect_symbol(query: str) -> str | None:
-    q = query.lower()
-    mapping = {
-        "btc": [
-            "btc",
-            "bitcoin",
-            "биткоин",
-            "биткойн",
-            "биток",
-            "битка",
-            "бтс",
-        ],
-        "eth": [
-            "eth",
-            "ethereum",
-            "эфир",
-            "эфириум",
-            "эфира",
-        ],
-        "ton": [
-            "ton",
-            "toncoin",
-            "тон",
-            "тонкоин",
-            "тона",
-        ],
-        "sol": [
-            "sol",
-            "solana",
-            "солана",
-            "сол",
-            "соланы",
-        ],
-        "bnb": [
-            "bnb",
-            "бинанс коин",
-            "бинби",
-        ],
-        "xrp": [
-            "xrp",
-            "рипл",
-            "ripple",
-            "хрп",
-        ],
-        "doge": [
-            "doge",
-            "дог",
-            "додж",
-            "доге",
-        ],
-        "trx": [
-            "trx",
-            "tron",
-            "трон",
-            "трона",
-        ],
-    }
-    for key, synonyms in mapping.items():
-        for s in synonyms:
-            if s in q:
-                base = key.upper()
-                return f"{base}USDT"
-    return None
-
-
-async def maybe_answer_crypto(message, query: str) -> bool:
-    symbol = detect_symbol(query)
-    if not symbol:
-        return False
-    price = await get_binance_price(symbol)
-    if price is None:
-        return False
-    name = symbol.replace("USDT", "")
-    body = f"Текущая цена {name}: {price} USDT"
-    text = "❓ Запрос: " + query + "\n\n" + "💡 Ответ:\n" + body
-    await safe_edit(message, text)
-    return True
 async def stream_and_edit(message, prompt):
     system_instruction = (
         "Respond only in Russian. "
@@ -383,9 +289,6 @@ async def handle_message(_, message):
         logger.info(
             f"request-started chat_id={message.chat.id} message_id={message.id} query_len={len(query)}"
         )
-        if await maybe_answer_crypto(message, query):
-            logger.info("crypto-answer-sent")
-            return
         await stream_and_edit(message, query)
         logger.info("request-finished")
 
